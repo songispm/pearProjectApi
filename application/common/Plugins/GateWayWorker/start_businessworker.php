@@ -27,7 +27,7 @@ $worker->name = 'YourAppBusinessWorker';
 // bussinessWorker进程数量
 $worker->count = 4;
 // 服务注册地址
-$worker->registerAddress = '192.168.0.159:2346';
+$worker->registerAddress = '10.30.150.39:2346';
 
 // 如果不是在根目录启动，则运行runAll方法
 if(!defined('GLOBAL_START'))

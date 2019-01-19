@@ -18,7 +18,7 @@ use GatewayWorker\BusinessWorker;
 use Workerman\Autoloader;
 require_once __DIR__ . '/vendor/autoload.php';
 
-$ssl = false;
+$ssl = true;
 $context = array();
 if ($ssl) {
     // 证书最好是申请的证书
@@ -26,8 +26,8 @@ if ($ssl) {
         // 更多ssl选项请参考手册 http://php.net/manual/zh/context.ssl.php
         'ssl' => array(
             // 请使用绝对路径
-            'local_cert' => '/www/wwwroot/pms/server.pem', // 也可以是crt文件
-            'local_pk' =>  '/www/wwwroot/pms/server.key',
+            'local_cert' => '/home/handong/Nginx/1_api.thispm.com_bundle.crt', // 也可以是crt文件
+            'local_pk' =>  '/home/handong/Nginx/2_api.thispm.com.key',
             'verify_peer' => false,
             'allow_self_signed' => true, //如果是自签名证书需要开启此选项
         )
@@ -35,7 +35,7 @@ if ($ssl) {
 }
 
 // gateway 进程，这里使用Text协议，可以用telnet测试
-$gateway = new Gateway("websocket://192.168.0.159:2345", $context);
+$gateway = new Gateway("websocket://10.30.150.39:2345", $context);
 
 if ($ssl) {
     // 开启SSL，websocket+SSL 即wss
@@ -52,7 +52,7 @@ $gateway->lanIp = '127.0.0.1';
 // 则一般会使用4000 4001 4002 4003 4个端口作为内部通讯端口
 $gateway->startPort = 2900;
 // 服务注册地址
-$gateway->registerAddress = '192.168.0.159:2346';
+$gateway->registerAddress = '10.30.150.39:2346';
 
 // 心跳间隔
 //$gateway->pingInterval = 10;

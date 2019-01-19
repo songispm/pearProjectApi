@@ -10,7 +10,7 @@ return [
     // 用户名
     'username'        => 'root',
     // 密码
-    'password'        => 'root',
+    'password'        => 'Donggua199301',
 
     // 端口
     'hostport'        => '',

@@ -24,7 +24,7 @@ class MessageService
          *这里假设GatewayClient和Register服务都在一台服务器上，ip填写127.0.0.1
          *注意：ip不能是0.0.0.0
          **/
-        Gateway::$registerAddress = '192.168.0.159:2346';
+        Gateway::$registerAddress = '10.30.150.39:2346';
     }
 
     public function sendToAll($message, $action = '', $client_id_array = null, $exclude_client_id = null, $raw = false)
