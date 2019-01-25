@@ -5,6 +5,9 @@ namespace app\common\Model;
 use function GuzzleHttp\Promise\task;
 use service\DateService;
 use think\Db;
+use think\db\exception\DataNotFoundException;
+use think\db\exception\ModelNotFoundException;
+use think\exception\DbException;
 use think\facade\Hook;
 
 /**
@@ -14,7 +17,7 @@ use think\facade\Hook;
  */
 class Task extends CommonModel
 {
-    protected $append = ['priText', 'liked', 'stared', 'childCount', 'hasComment', 'hasSource'];
+    protected $append = ['priText', 'liked', 'stared', 'childCount', 'hasUnDone', 'parentDone', 'hasComment', 'hasSource', 'canRead'];
 
     public function read($code)
     {
@@ -33,6 +36,17 @@ class Task extends CommonModel
         }
         if ($task['pcode']) {
             $task['parentTask'] = self::where(['code' => $task['pcode']])->field('id', true)->find();
+            $parents = [];
+            if (isset($task['path'])) {
+                $paths = explode(',', $task['path']);
+                if ($paths) {
+                    foreach ($paths as $parentCode) {
+                        $item = self::where(['code' => $parentCode])->field('name')->find();
+                        $parents[] = ['code' => $parentCode, 'name' => $item['name']];
+                    }
+                }
+            }
+            $task['parentTasks'] = array_reverse($parents);
         }
         $task['projectName'] = $project['name'];
         $task['stageName'] = $stage['name'];
@@ -213,6 +227,9 @@ class Task extends CommonModel
             if ($parentTask['deleted']) {
                 throw new \Exception('父任务在回收站中无法编辑', 6);
             }
+            if ($parentTask['done']) {
+                throw new \Exception('父任务已完成，无法添加新的子任务', 7);
+            }
         }
         if ($assignTo) {
             $assignMember = Member::where(['code' => $assignTo])->field('id')->find();
@@ -232,6 +249,11 @@ class Task extends CommonModel
                 if (!$maxNum) {
                     $maxNum = 0;
                 }
+                $path = '';
+                if ($parentCode) {
+                    $parentTask['path'] && $parentTask['path'] = ",{$parentTask['path']}";
+                    $path = "{$parentTask['code']}{$parentTask['path']}";
+                }
                 $data = [
                     'create_time' => nowTime(),
                     'code' => createUniqueCode('task'),
@@ -240,6 +262,7 @@ class Task extends CommonModel
                     'id_num' => $maxNum + 1,
                     'project_code' => $projectCode,
                     'pcode' => $parentCode,
+                    'path' => $path,
                     'stage_code' => $stageCode,
                     'name' => trim($taskTitle),
                 ];
@@ -285,6 +308,13 @@ class Task extends CommonModel
         if ($task['deleted']) {
             throw new \Exception('任务在回收站中无法进行编辑', 3);
         }
+        if ($task['pcode'] && $task['parentDone']) {
+            throw new \Exception('父任务已完成，无法重做子任务', 4);
+        }
+        if ($task['hasUnDone']) {
+            throw new \Exception('子任务尚未全部完成，无法完成父任务', 5);
+        }
+
         Db::startTrans();
         try {
             $result = self::update(['done' => $done], ['code' => $taskCode]);
@@ -335,6 +365,20 @@ class Task extends CommonModel
             throw new \Exception($e->getMessage());
         }
         return $result;
+    }
+
+    public function batchAssignTask($taskCodes, $executorCode)
+    {
+        if ($taskCodes) {
+            try {
+                foreach ($taskCodes as $taskCode) {
+                    $this->assignTask($taskCode, $executorCode);
+                }
+            } catch (\Exception $e) {
+                return error(201, $e->getMessage());
+            }
+        }
+        return true;
     }
 
     /**
@@ -398,7 +442,11 @@ class Task extends CommonModel
         $offset = ($page - 1) * $page;
         $limit = $pageSize;
         $prefix = config('database.prefix');
-        $sql = "select *,t.id as id,t.name as name,t.code as code from {$prefix}task as t join {$prefix}project as p on t.project_code = p.code where t.done = {$done} and t.deleted = 0 and t.assign_to = '{$memberCode}' and p.deleted = 0 order by t.id desc";
+        $doneSql = '';
+        if ($done != -1) {
+            $doneSql = " and t.done = {$done}";
+        }
+        $sql = "select *,t.id as id,t.name as name,t.code as code,t.create_time as create_time from {$prefix}task as t join {$prefix}project as p on t.project_code = p.code where  t.deleted = 0 {$doneSql} and t.assign_to = '{$memberCode}' and p.deleted = 0 order by t.id desc";
         $total = Db::query($sql);
         $total = count($total);
         $sql .= " limit {$offset},{$limit}";
@@ -508,6 +556,9 @@ class Task extends CommonModel
         return $status[$data['pri']];
     }
 
+    /**
+     * 子任务数
+     */
     public function getChildCountAttr($value, $data)
     {
         $childTasks = [];
@@ -518,6 +569,36 @@ class Task extends CommonModel
             $childTasks[] = $childTaskCount;
         }
         return $childTasks;
+    }
+
+    /**
+     * 父任务是否完成
+     */
+    public function getParentDoneAttr($value, $data)
+    {
+        $done = 1;
+        if (isset($data['code']) && isset($data['pcode']) && $data['pcode']) {
+            $task = self::where(['code' => $data['pcode']])->field('done')->find();
+            if ($task && !$task['done']) {
+                $done = 0;
+            }
+        }
+        return $done;
+    }
+
+    /**
+     * 是否有子任务未完成
+     */
+    public function getHasUnDoneAttr($value, $data)
+    {
+        $hasUnDone = 0;
+        if (isset($data['code'])) {
+            $taskCount = self::where(['pcode' => $data['code'], 'done' => 0])->count('id');
+            if ($taskCount) {
+                $hasUnDone = 1;
+            }
+        }
+        return $hasUnDone;
     }
 
     public function getHasCommentAttr($value, $data)
@@ -536,6 +617,29 @@ class Task extends CommonModel
             $sources = SourceLink::where(['link_code' => $data['code'], 'link_type' => 'task'])->count('id');
         }
         return $sources;
+    }
+
+    /**
+     * 是否有阅读权限
+     * @param $value
+     * @param $data
+     * @return bool
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\ModelNotFoundException
+     * @throws \think\exception\DbException
+     */
+    public function getCanReadAttr($value, $data)
+    {
+        $canRead = 1;
+        if (isset($data['private'])) {
+            if ($data['private']) {
+                $taskMember = TaskMember::where(['task_code' => $data['code'], 'member_code' => getCurrentMember()['code']])->field('id')->find();
+                if (!$taskMember) {
+                    $canRead = 0;
+                }
+            }
+        }
+        return $canRead;
     }
 
     public function getLikedAttr($value, $data)

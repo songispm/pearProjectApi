@@ -39,9 +39,7 @@ class Index extends BasicApi
 
     public function index()
     {
-
         $this->success('success');
-
     }
 
     /**
@@ -213,11 +211,11 @@ class Index extends BasicApi
         $clientId = $request::param('client_id');
         $uid = $request::param('uid');
         if (!$uid) {
-            $uid = session('user.id');
+            $uid = getCurrentMember()['code'];
         }
         $messageService = new MessageService();
         $messageService->bindUid($clientId, $uid);
-        $messageService->joinGroup($clientId, 'admin');
+        $messageService->joinGroup($clientId, 'project');
         $this->success('', $uid);
     }
 
@@ -236,7 +234,7 @@ class Index extends BasicApi
         $uid = $request::param('uid');
         $messageService = new MessageService();
         $messageService->sendToUid($uid, '888', 'notice');
-        $this->success();
+        $this->success('', $messageService->isUidOnline($uid));
 
     }
 

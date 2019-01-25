@@ -53,15 +53,15 @@ class DepartmentMember extends BasicApi
     public function searchInviteMember()
     {
         $keyword = trim(Request::post('keyword'));
-        $department_code = Request::post('departmentCode','');
+        $department_code = Request::post('departmentCode', '');
 
         $orgCode = getCurrentOrganizationCode();
         if (!$keyword && !$department_code) {
             $this->success('');
         }
         if ($department_code) {//添加部门成员
-            $departmentMemberIds = $this->model->where([['organization_code', '=', $orgCode],['department_code', '=', $department_code]])->column('account_code');
-        }else{
+            $departmentMemberIds = $this->model->where([['organization_code', '=', $orgCode], ['department_code', '=', $department_code]])->column('account_code');
+        } else {
             //添加组织成员
             $departmentMemberIds = MemberAccount::where([['organization_code', '=', $orgCode]])->column('member_code');
         }
@@ -105,6 +105,7 @@ class DepartmentMember extends BasicApi
         }
         $this->success('', array_values($tempList));//数组下标重置
     }
+
 
     /**
      * 邀请成员

@@ -81,12 +81,18 @@ class Task extends BasicApi
      */
     public function selfList()
     {
-        $type = Request::post('type');
-        $member = getCurrentMember();
+        $type = Request::post('type', 0);
+        $memberCode = Request::post('memberCode', '');
+        if (!$memberCode) {
+            $member = getCurrentMember();
+        } else {
+            $member = Member::where(['code' => $memberCode])->find();
+        }
         $done = 1;
         if (!$type) {
             $done = 0;
         }
+        $type == -1 && $done = $type;
         $list = $this->model->getMemberTasks($member['code'], $done, Request::post('page'), Request::post('pageSize'));
         if ($list['list']) {
             foreach ($list['list'] as &$task) {
@@ -110,8 +116,8 @@ class Task extends BasicApi
 
     public function read(Request $request)
     {
+        //todo 隐私模式阅读权限
         $data = $request::only('taskCode');
-
         try {
             $result = $this->model->read($data['taskCode']);
         } catch (\Exception $e) {
@@ -204,6 +210,25 @@ class Task extends BasicApi
         $this->error("操作失败，请稍候再试！");
     }
 
+
+    /**
+     * 批量
+     * 指派任务
+     * @param Request $request
+     */
+    public function batchAssignTask(Request $request)
+    {
+        $taskCodes = $request::param('taskCodes');
+        $executorCode = $request::param('executorCode');
+        if ($taskCodes) {
+            $result = $this->model->batchAssignTask(json_decode($taskCodes), $executorCode);
+            if (isError($result)) {
+                $this->error($result['msg'], $result['errno']);
+            }
+        }
+        $this->success();
+    }
+
     /**
      * 排序
      * @param Request $request
@@ -268,6 +293,25 @@ class Task extends BasicApi
             $this->success();
         }
         $this->error("操作失败，请稍候再试！");
+    }
+
+    /**
+     * 设置隐私模式
+     * @param Request $request
+     * @throws \Exception
+     */
+    public function setPrivate(Request $request)
+    {
+        $private = intval($request::post('private', 0));
+        $code = $request::post('taskCode');
+        if ($private === 0 || $private === 1) {
+            $result = $this->model->edit($code, ['private' => $private]);
+            if ($result) {
+                $this->success();
+            }
+            $this->error("操作失败，请稍候再试！");
+        }
+        $this->success();
     }
 
     /**
@@ -366,6 +410,7 @@ class Task extends BasicApi
         }
         $this->success('', $list);
     }
+
     /**
      * 批量放入回收站
      */
