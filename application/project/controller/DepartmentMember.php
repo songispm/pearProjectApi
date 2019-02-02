@@ -66,7 +66,7 @@ class DepartmentMember extends BasicApi
             $departmentMemberIds = MemberAccount::where([['organization_code', '=', $orgCode]])->column('member_code');
         }
         //从当前组织的所有成员查询，判断是否已加入该组织/部门，并存储已加入组织/部门的成员的account_code
-        $memberAccountList = MemberAccount::where([['name', 'like', "%{$keyword}%"], ['organization_code', '=', $orgCode]])->select()->toArray();
+        $memberAccountList = MemberAccount::where([['name', 'like', "%{$keyword}%"], ['organization_code', '=', $orgCode], ['status', '=', 1]])->select()->toArray();
         $tempList = [];
         if ($memberAccountList) {
             foreach ($memberAccountList as $member) {
@@ -87,7 +87,7 @@ class DepartmentMember extends BasicApi
         }
         if (!$department_code) {
             //从平台查询
-            $memberList = Member::where([['email', 'like', "%{$keyword}%"]])->whereNotIn('code', $departmentMemberIds)->select()->toArray();
+            $memberList = Member::where([['email', '=', "{$keyword}"]])->whereNotIn('code', $departmentMemberIds)->select()->toArray();
             if ($memberList) {
                 foreach ($memberList as $member) {
                     $item = [];
