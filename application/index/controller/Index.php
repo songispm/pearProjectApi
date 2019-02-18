@@ -21,9 +21,12 @@ use app\common\Model\Task;
 use app\common\Model\TaskLike;
 use app\common\Model\TaskMember;
 use app\common\Model\TaskStages;
+use app\common\Model\Notify;
 use controller\BasicApi;
 use Exception;
+use Firebase\JWT\JWT;
 use PDO;
+use service\JwtService;
 use service\MessageService;
 use think\facade\Request;
 
@@ -191,6 +194,24 @@ class Index extends BasicApi
         TaskLike::where("id > 0")->delete();
         TaskMember::where("id > 0")->delete();
         TaskStages::where("id > 0")->delete();
+        Notify::where("id > 0")->delete();
+    }
+
+    /**
+     * 刷新token
+     */
+    public function refreshAccessToken()
+    {
+        $refreshToken = Request::param('refreshToken', '');
+        $data = JwtService::decodeToken($refreshToken);
+        if (isError($data)) {
+            $this->error('token过期，请重新登录', 401);
+        }
+        $accessToken = JwtService::getAccessToken(get_object_vars($data->data));
+        $accessTokenExp = JwtService::decodeToken($accessToken)->exp;
+        $tokenList['accessTokenExp'] = $accessTokenExp;
+        $this->success('', ['accessToken' => $accessToken, 'accessTokenExp' => $accessTokenExp]);
+
     }
 
     /**
