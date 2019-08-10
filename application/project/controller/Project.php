@@ -2,11 +2,14 @@
 
 namespace app\project\controller;
 
+use app\common\Model\CommonModel;
 use app\common\Model\Member;
 use app\common\Model\MemberAccount;
 use app\common\Model\Notify;
 use app\common\Model\ProjectCollection;
+use app\common\Model\ProjectLog;
 use app\common\Model\ProjectMember;
+use app\common\Model\ProjectReport;
 use app\common\Model\SystemConfig;
 use controller\BasicApi;
 use OSS\Core\OssException;
@@ -14,7 +17,10 @@ use service\FileService;
 use service\NodeService;
 use service\RandomService;
 use think\Db;
+use think\db\exception\DataNotFoundException;
+use think\db\exception\ModelNotFoundException;
 use think\Exception;
+use think\Exception\DbException;
 use think\exception\PDOException;
 use think\facade\Request;
 use think\File;
@@ -35,53 +41,48 @@ class Project extends BasicApi
      * 显示资源列表
      *
      * @return void
-     * @throws \think\exception\DbException
+     * @throws DbException
      */
     public function index()
     {
-        $where = [];
+        $prefix = config('database.prefix');
         $type = Request::post('type');
+        $page = Request::param('page', 1);
+        $pageSize = Request::param('pageSize', cookie('pageSize'));
         $data = Request::only('recycle,archive,all');
-        $member = getCurrentMember();
+        $currentMember = getCurrentMember();
+        $memberCode = $currentMember['code'];
 
-        $where[] = ['member_code', '=', $member['code']];
+        $orgCode = getCurrentOrganizationCode();
         if ($type == 'my' || $type == 'other') {
-            $projectMemberModel = new ProjectMember();
-            $list = $projectMemberModel->_list($where);
+            $sql = "select * from {$prefix}project as pp join {$prefix}project_member as pm on pm.project_code = pp.code where pp.organization_code = '{$orgCode}' and (pm.member_code = '{$memberCode}' or pp.private = 0) group by pp.`code` order by pp.id desc";
+            $list = CommonModel::limitByQuery($sql, $page, $pageSize);
         } else {
-            $projectCollectionModel = new ProjectCollection();
-            $where[] = ['member_code', '=', $member['code']];
-            $list = $projectCollectionModel->_list($where);
+            $sql = "select * from {$prefix}project as pp join {$prefix}project_collection as pc on pc.project_code = pp.code where pp.organization_code = '{$orgCode}' and pc.member_code = '{$memberCode}' group by pp.`code` order by pc.id desc";
+            $list = CommonModel::limitByQuery($sql, $page, $pageSize);
         }
         $newList = [];
         if ($list['list']) {
-            $currentMember = getCurrentMember();
             foreach ($list['list'] as $key => &$item) {
                 $delete = false;
-                $project = $this->model->where(['code' => $item->project_code])->find();
-                if (!$project) {
-                    $delete = true;
-                }
                 if ($type != 'other') {
-                    if ($project['deleted']) {
+                    if ($item['deleted']) {
                         $delete = true;
                     }
                 }
-                if (isset($data['archive']) && !$project['archive']) {
+                if (isset($data['archive']) && !$item['archive']) {
                     $delete = true;
                 }
-                if (isset($data['recycle']) && !$project['deleted']) {
+
+                if (isset($data['recycle']) && !$item['deleted']) {
                     $delete = true;
                 }
                 if ($delete) {
                     continue;
                 }
+
                 $item['collected'] = false;
                 $item['owner_name'] = '-';
-                if (isset($item['project_code'])) {
-                    $item['code'] = $item['project_code'];
-                    $item = $this->model->where(['code' => $item['code']])->find();
-                }
                 $collected = ProjectCollection::where(['project_code' => $item['code'], 'member_code' => $currentMember['code']])->field('id')->find();
                 if ($collected) {
                     $item['collected'] = true;
@@ -104,9 +105,9 @@ class Project extends BasicApi
 
     /**
      * 获取自己的项目
-     * @throws \think\db\exception\DataNotFoundException
-     * @throws \think\db\exception\ModelNotFoundException
-     * @throws \think\exception\DbException
+     * @throws DataNotFoundException
+     * @throws ModelNotFoundException
+     * @throws DbException
      */
     public function selfList()
     {
@@ -118,11 +119,14 @@ class Project extends BasicApi
         } else {
             $member = Member::where(['code' => $memberCode])->find();
         }
+        if (!$member) {
+            $this->error("参数有误");
+        }
         $deleted = 1;
         if (!$type) {
             $deleted = 0;
         }
-        $list = $this->model->getMemberProjects($member['code'], $deleted, $archive, Request::post('page'), Request::post('pageSize'));
+        $list = $this->model->getMemberProjects($member['code'], getCurrentOrganizationCode(), $deleted, $archive, Request::post('page'), Request::post('pageSize'));
         if ($list['list']) {
             foreach ($list['list'] as $key => &$item) {
                 $item['collected'] = false;
@@ -175,7 +179,7 @@ class Project extends BasicApi
      *
      * @param Request $request
      * @return void
-     * @throws \think\Exception\DbException
+     * @throws DbException
      */
     public function read(Request $request)
     {
@@ -210,7 +214,7 @@ class Project extends BasicApi
      */
     public function edit(Request $request)
     {
-        $data = $request::only('name,description,cover,private,prefix,open_prefix,schedule');
+        $data = $request::only('name,description,cover,private,prefix,open_prefix,schedule,open_begin_time,open_task_private,task_board_theme,begin_time,end_time');
         $code = $request::param('projectCode');
         try {
             $result = $this->model->edit($code, $data);
@@ -230,7 +234,9 @@ class Project extends BasicApi
     public function getLogBySelfProject()
     {
         $projectCode = Request::param('projectCode', '');
+        $orgCode = getCurrentOrganizationCode();
         $member = getCurrentMember();
+        $memberCode = $member['code'];
         if (!$member) {
             $this->success('', []);
         }
@@ -239,10 +245,13 @@ class Project extends BasicApi
             $where = [];
             $where[] = ['member_code', '=', $member['code']];
             $projectCodes = ProjectMember::where($where)->column('project_code');
+            $sql = "select pp.code from {$prefix}project as pp join {$prefix}project_member as pm on pm.project_code = pp.code where pp.organization_code = '{$orgCode}' and (pm.member_code = '{$memberCode}') group by pp.`code`";
+            $projectCodes = Db::query($sql);
             if (!$projectCodes) {
                 $this->success('', []);
             }
             foreach ($projectCodes as &$projectCode) {
+                $projectCode = $projectCode['code'];
                 $projectCode = "'{$projectCode}'";
             }
             $projectCodes = implode(',', $projectCodes);
@@ -277,6 +286,73 @@ class Project extends BasicApi
             $list = ['total' => $total, 'list' => $list];
         }
         $this->success('', $list);
+    }
+
+    /**
+     * 项目情况统计
+     */
+    public function _setDayilyProejctReport()
+    {
+        logRecord(nowTime(), 'setDayilyProejctReportBegin');
+        debug('begin');
+        $result = ProjectReport::setDayilyProejctReport();
+        debug('end');
+        logRecord(debug('begin','end') * 1000 . 'ms', 'setDayilyProejctReportSuccess');
+        echo 'success_at ' . nowTime();
+    }
+
+    /**
+     * 概览报表
+     * @throws DataNotFoundException
+     * @throws DbException
+     * @throws ModelNotFoundException
+     */
+    public function _projectStats()
+    {
+        $projectCode = Request::param('projectCode');
+        if (!$projectCode) {
+            $this->error('项目已失效');
+        }
+        $project = \app\common\Model\Project::where(['code' => $projectCode])->find();
+        if (!$project) {
+            $this->error('项目已失效');
+        }
+        $taskStats = [
+            'total' => 0,
+            'unDone' => 0,
+            'done' => 0,
+            'overdue' => 0,
+            'toBeAssign' => 0,
+            'expireToday' => 0,
+            'doneOverdue' => 0,
+        ];
+        $taskList = \app\common\Model\Task::where(['project_code' => $projectCode, 'deleted' => 0])->select()->toArray();
+        $taskStats['total'] = count($taskList);
+        if ($taskList) {
+            $today = date('Y-m-d 00:00', time());
+            $tomorrow = date('Y-m-d 00:00', strtotime($today) + 3600 * 24);
+            foreach ($taskList as $item) {
+                !$item['assign_to'] && $taskStats['toBeAssign']++;
+                $item['done'] && $taskStats['done']++;
+                !$item['done'] && $taskStats['unDone']++;
+                if ($item['end_time']) {
+                    if (!$item['done']) {
+                        $item['end_time'] < nowTime() && $taskStats['overdue']++;
+                        if ($item['end_time'] >= $today && $item['end_time'] < $tomorrow) {
+                            $taskStats['doneOverdue']++;
+                        }
+                    } else {
+                        $log = ProjectLog::where(['action_type' => 'task', 'source_code' => $item['code'], 'type' => 'done'])->order('id desc')->find();
+                        if ($log && $log['create_time'] > $item['end_time']) {
+                            $taskStats['doneOverdue']++;
+                        }
+                    }
+                }
+
+            }
+        }
+
+        $this->success('', $taskStats);
     }
 
     /**

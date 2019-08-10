@@ -3,28 +3,38 @@
 namespace app\project\controller;
 
 use app\common\Model\CommonModel;
+use app\common\Model\Department;
 use app\common\Model\Member;
 use app\common\Model\MemberAccount;
-use app\common\Model\Notify;
-use app\common\Model\SourceLink;
 use app\common\Model\SystemConfig;
 use controller\BasicApi;
-use service\FileService;
+use Exception;
+use OSS\Core\OssException;
 use service\NodeService;
+use think\db\exception\DataNotFoundException;
+use think\db\exception\ModelNotFoundException;
+use think\Exception\DbException;
+use think\exception\PDOException;
 use think\facade\Request;
-use think\File;
 
 /**
- * 应用入口控制器
+ * @title 项目管理
+ * @description 接口说明
+ * @group 接口分组
  */
 class Index extends BasicApi
 {
 
     /**
-     * 后台框架布局
-     * @throws \think\db\exception\DataNotFoundException
-     * @throws \think\db\exception\ModelNotFoundException
-     * @throws \think\exception\DbException
+     * @title 用户菜单
+     * @description 获取用户菜单列表
+     * @return void :名称
+     * @throws DataNotFoundException
+     * @throws ModelNotFoundException
+     * @throws DbException
+     * @author PearProject
+     * @url /project/index
+     * @method GET
      */
     public function index()
     {
@@ -34,9 +44,9 @@ class Index extends BasicApi
 
     /**
      * 更换当前组织
-     * @throws \think\db\exception\DataNotFoundException
-     * @throws \think\db\exception\ModelNotFoundException
-     * @throws \think\exception\DbException
+     * @throws DataNotFoundException
+     * @throws ModelNotFoundException
+     * @throws DbException
      */
     public function changeCurrentOrganization()
     {
@@ -45,6 +55,18 @@ class Index extends BasicApi
             $member = getCurrentMember();
             $memberAccount = MemberAccount::where(['member_code' => $member['code'], 'organization_code' => $organizationCode])->find();
             $member = Member::where(['account' => $member['account']])->order('id asc')->find()->toArray();
+
+            $departments = [];
+            $departmentCodes = $memberAccount['department_code'];
+            if ($departmentCodes) {
+                $departmentCodes = explode(',', $departmentCodes);
+                foreach ($departmentCodes as $departmentCode) {
+                    $department = Department::where(['code' => $departmentCode])->field('name')->find();
+                    $departments[] = $department['name'];
+                }
+            }
+            $member['position'] = $memberAccount['position'];
+            $member['department'] = $departments ? implode(' - ', $departments) : '';
             $member['account_id'] = $memberAccount['id'];
             $member['is_owner'] = $memberAccount['is_owner'];
             $member['authorize'] = $memberAccount['authorize'];
@@ -53,7 +75,7 @@ class Index extends BasicApi
             setCurrentOrganizationCode($organizationCode);
 
             $list = MemberAccount::getAuthMenuList();
-            $this->success('', $list);
+            $this->success('', ['menuList' => $list, 'member' => $member]);
         }
         $this->error('请选择组织');
     }
@@ -68,12 +90,11 @@ class Index extends BasicApi
 
     }
 
-
     /**
      * 个人个信息
-     * @throws \think\db\exception\DataNotFoundException
-     * @throws \think\db\exception\ModelNotFoundException
-     * @throws \think\exception\DbException
+     * @throws DataNotFoundException
+     * @throws ModelNotFoundException
+     * @throws DbException
      */
     public function info()
     {
@@ -89,6 +110,10 @@ class Index extends BasicApi
         $params = Request::only('mobile,mail,idcard,name,realname,avatar,id');
         $memberModel = new Member();
         $result = $memberModel->_edit($params, ['id' => Request::post('id')]);
+        if (isset($params['avatar'])) {
+            $member = Member::get($params['id']);
+            MemberAccount::update(['avatar' => $params['avatar']], ['member_code' => $member['code']]);
+        }
         if ($result) {
             $this->success('基本信息更新成功');
         }
@@ -98,7 +123,7 @@ class Index extends BasicApi
     /**
      * 密码修改
      * @return array|string
-     * @throws \think\Exception\DbException
+     * @throws DbException
      */
     public function editPassword()
     {
@@ -124,9 +149,9 @@ class Index extends BasicApi
 
     /**
      * @return void
-     * @throws \OSS\Core\OssException
+     * @throws OssException
      * @throws \think\Exception
-     * @throws \think\exception\PDOException
+     * @throws PDOException
      */
     public function uploadImg()
     {
@@ -154,7 +179,7 @@ class Index extends BasicApi
         $accountModel = new MemberAccount();
         try {
             $file = $accountModel->uploadImg(Request::file('avatar'));
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             $this->error($e->getMessage(), $e->getCode());;
         }
         $this->success('', $file);
