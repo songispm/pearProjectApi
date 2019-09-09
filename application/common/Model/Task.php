@@ -347,6 +347,18 @@ class Task extends CommonModel
             $result = self::update(['done' => $done], ['code' => $taskCode]);
             //todo 添加任务动态，编辑权限检测
             Db::commit();
+            $project = Project::where(['code' => $task['project_code']])->field('auto_update_schedule,schedule')->find();
+            if ($project['auto_update_schedule']) {
+                $taskCount = \app\common\Model\Task::where(['project_code' => $task['project_code']])->count('code');
+                if ($taskCount) {
+                    $doneTaskCount = \app\common\Model\Task::where(['project_code' => $task['project_code'], 'done' => 1])->count('code');
+                    $schedule = $doneTaskCount / $taskCount * 100;
+                    $project->schedule = $schedule;
+                    $project->save();
+                }
+
+            }
+            $projectAutoUpdateSchedule = 1;
         } catch (Exception $e) {
             Db::rollback();
             throw new Exception($e->getMessage());
@@ -484,7 +496,7 @@ class Task extends CommonModel
         if ($done != -1) {
             $doneSql = " and t.done = {$done}";
         }
-        $sql = "select *,t.id as id,t.name as name,t.code as code,t.create_time as create_time from {$prefix}task as t join {$prefix}project as p on t.project_code = p.code where  t.deleted = 0 {$doneSql} and t.assign_to = '{$memberCode}' and p.deleted = 0 order by t.id desc";
+        $sql = "select *,t.id as id,t.name as name,t.code as code,t.create_time as create_time,t.end_time,t.begin_time from {$prefix}task as t join {$prefix}project as p on t.project_code = p.code where  t.deleted = 0 {$doneSql} and t.assign_to = '{$memberCode}' and p.deleted = 0 order by t.id desc";
         $total = Db::query($sql);
         $total = count($total);
         $sql .= " limit {$offset},{$limit}";
