@@ -12,7 +12,7 @@ return [
 
         // 默认可用的发送网关
         'gateways' => [
-            'submail', 'aliyun'
+            'submail'
         ],
     ],
     // 可用的网关配置
@@ -24,11 +24,6 @@ return [
             'app_id' => '40825',
             'app_key' => '51084e8353eac3fa2fbd1488e6af4ec8',
             'project' => 'ThisPM', // 默认 project，可在发送时 data 中指定
-        ],
-        'aliyun' => [
-            'access_key_id' => '',
-            'access_key_secret' => '',
-            'sign_name' => '',
-        ],
+        ]
     ],
 ];
