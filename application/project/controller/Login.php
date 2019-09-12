@@ -107,7 +107,7 @@ class Login extends BasicApi
             $sms = new Sms();
             $result = $sms->vSend($mobile, [
                 'data' => [
-                    'project' => 'DWYsW1',
+                    'project' => 'ThisPM',
                     'code' => $code
                 ],
             ]);
