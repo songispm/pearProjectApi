@@ -105,7 +105,13 @@ class Login extends BasicApi
         $code = RandomService::numeric(6);
         if (!config('sms.debug')) {
             $sms = new Sms();
-            $result = $sms->vSend($mobile, $code);
+            $result = $sms->vSend($mobile, [
+                'data' => [
+                    'project' => 'Cvt044',
+                    'code' => $code,
+                    'time' => '5分钟'
+                ],
+            ]);
             if (isError($result)) {
                 $this->error('系统繁忙');
             }

@@ -23,7 +23,7 @@ return [
         'submail' => [
             'app_id' => '40825',
             'app_key' => '51084e8353eac3fa2fbd1488e6af4ec8',
-            'project' => 'ThisPM', // 默认 project，可在发送时 data 中指定
+            'project' => 'Cvt044', // 默认 模板ID，可在发送时 data 中指定
         ]
     ],
 ];
