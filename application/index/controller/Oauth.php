@@ -16,7 +16,6 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use think\db\exception\DataNotFoundException;
 use think\db\exception\ModelNotFoundException;
 use think\exception\DbException;
-use think\facade\Log;
 use think\facade\Request;
 use think\response\Redirect;
 
@@ -144,7 +143,7 @@ class Oauth extends BasicApi
                 if (!$user['errcode']) {
                     $user['user_info']['avatar'] = $userInfo['avatar'];
                     $user['user_info']['mobile'] = $userInfo['mobile'];
-                    $user['user_info']['email'] = $userInfo['email'];
+                    $user['user_info']['email'] = $userInfo['email'] ?? '';
                     $user['user_info']['userId'] = $userId;
                 }
             }

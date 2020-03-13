@@ -26,8 +26,20 @@ class Member extends CommonModel
         Db::name('Member')->where(['id' => $member['id']])->update([
             'last_login_time' => Db::raw('now()'),
         ]);
-        $list = MemberAccount::where(['member_code' => $member['code']])->order('id asc')->select()->toArray();
-        $organizationList = [];
+
+        $configModel = new SystemConfig();
+        $config = $configModel->info();
+        if ($config['single_mode'] && $config['single_org_code']) {
+            $list = MemberAccount::where(['member_code' => $member['code'], 'organization_code' => $config['single_org_code']])->order('id asc')->select()->toArray();
+            if (!$list) {
+                MemberAccount::inviteMember($member['code'], $config['single_org_code']);
+                $list = MemberAccount::where(['member_code' => $member['code'], 'organization_code' => $config['single_org_code']])->order('id asc')->select()->toArray();
+            }
+        } else {
+            $list = MemberAccount::where(['member_code' => $member['code']])->order('id asc')->select()->toArray();
+        }
+
+        $organizationList = self::getOrgList($member['code'], true);
         if ($list) {
             foreach ($list as &$item) {
                 $departments = [];
@@ -40,10 +52,6 @@ class Member extends CommonModel
                     }
                 }
                 $item['department'] = $departments ? implode(' - ', $departments) : '';
-                $organization = Organization::where(['code' => $item['organization_code']])->find();
-                if ($organization) {
-                    $organizationList[] = $organization;
-                }
             }
         }
         $member['account_id'] = $list[0]['id'];
@@ -62,6 +70,59 @@ class Member extends CommonModel
         session('loginInfo', $loginInfo);
         logRecord($loginInfo, 'info', 'member/login');
         return $loginInfo;
+    }
+
+    /**
+     * 获取当前用户所在的组织
+     * @param string $memberCode
+     * @param bool $newest 是否取最新的值
+     * @return array
+     * @throws DataNotFoundException
+     * @throws DbException
+     * @throws ModelNotFoundException
+     */
+    public static function getOrgList(string $memberCode, $newest = false)
+    {
+        $organizationList = [];
+        if (!$memberCode) {
+            return $organizationList;
+        }
+        $cacheKey = 'member:orgList:' . $memberCode;
+        if (!$newest) {
+            $organizationList = cache($cacheKey);
+            if ($organizationList) {
+                return $organizationList;
+            }
+        }
+        $list = MemberAccount::where(['member_code' => $memberCode])->order('id asc')->select()->toArray();
+        if ($list) {
+            $configModel = new SystemConfig();
+            $config = $configModel->info();
+            $single = false;
+            if ($config['single_mode'] && $config['single_org_code']) {
+                $single = true;
+            }
+            foreach ($list as $item) {
+                $organization = Organization::where(['code' => $item['organization_code']])->find();
+                if ($organization) {
+                    if ($single) {
+                        if ($item['organization_code'] == $config['single_org_code']) {
+                            $organizationList[] = $organization;
+                            break;
+                        };
+                    } else {
+                        $organizationList[] = $organization;
+                    }
+                }
+            }
+            if (!$organizationList) {
+                $organization = Organization::where(['code' => $config['single_org_code']])->find();
+                MemberAccount::inviteMember($memberCode, $config['single_org_code']);
+                $organizationList[] = $organization;
+            }
+        }
+        cache($cacheKey, $organizationList, 3600 * 24);
+        return $organizationList;
     }
 
     /**
@@ -92,52 +153,13 @@ class Member extends CommonModel
             }
         }
         $result = self::create($memberData);
-
-
         Organization::createOrganization($result);
-//        $organizationData = [
-//            'code' => createUniqueCode('organization'),
-//            'name' => $memberData['name'] . '的个人项目',
-//            'personal' => 1,
-//            'create_time' => nowTime(),
-//            'owner_code' => $memberData['code'],
-//        ];
-//        Organization::create($organizationData);
-//
-//        $defaultAdminAuth = ProjectAuth::get(1)->toArray();
-//        $defaultMemberAuth = ProjectAuth::get(2)->toArray();
-//        unset($defaultAdminAuth['id']);
-//        unset($defaultMemberAuth['id']);
-//        $defaultAdminAuth['organization_code'] = $defaultMemberAuth['organization_code'] = $organizationData['code'];
-//        $defaultAdminAuth = ProjectAuth::create($defaultAdminAuth);
-//        $defaultMemberAuth = ProjectAuth::create($defaultMemberAuth);
-//        $defaultAdminAuthNode = ProjectAuthNode::where(['auth' => 1])->select()->toArray();
-//        $defaultMemberAuthNode = ProjectAuthNode::where(['auth' => 2])->select()->toArray();
-//        foreach ($defaultAdminAuthNode as &$item) {
-//            unset($item['id']);
-//            $item['auth'] = $defaultAdminAuth['id'];
-//            ProjectAuthNode::create($item);
-//        }
-//        foreach ($defaultMemberAuthNode as &$item) {
-//            unset($item['id']);
-//            $item['auth'] = $defaultMemberAuth['id'];
-//            ProjectAuthNode::create($item);
-//        }
-//
-//        $memberAccountData = [
-//            'position' => '资深工程师',
-//            'department' => '某某公司－某某某事业群－某某平台部－某某技术部－BM',
-//            'code' => createUniqueCode('organization'),
-//            'member_code' => $memberData['code'],
-//            'organization_code' => $organizationData['code'],
-//            'is_owner' => 1,
-//            'status' => 1,
-//            'create_time' => nowTime(),
-//            'avatar' => $memberData['avatar'],
-//            'name' => $memberData['name'],
-//            'email' => $memberData['email'],
-//        ];
-//        MemberAccount::create($memberAccountData);
+
+        $configModel = new SystemConfig();
+        $config = $configModel->info();
+        if ($config['single_mode'] && $config['single_org_code']) {
+            MemberAccount::inviteMember($result['code'], $config['single_org_code']);
+        }
         return $result;
     }
 
@@ -174,6 +196,22 @@ class Member extends CommonModel
             } else {
                 //已登录且未绑定，则绑定
                 if (!$currentMember['dingtalk_unionid'] || !$currentMember['dingtalk_userid']) {
+                    if ($currentMember['mobile']) {
+                        unset($memberData['mobile']);
+                    } else {
+                        $has = self::where(['mobile' => $memberData['mobile']])->find();
+                        if ($has) {
+                            return error('1', '您想要绑定的手机号码已经被绑定给其他帐号，请先用该手机号码登录后进行重置，再切回当前帐号发起绑定');
+                        }
+                    }
+                    if ($currentMember['email']) {
+                        unset($memberData['email']);
+                    } else {
+                        $has = self::where(['email' => $memberData['email']])->find();
+                        if ($has) {
+                            return error('1', '您想要绑定的邮箱已经被绑定给其他帐号，请先用该邮箱登录后进行重置，再切回当前帐号发起绑定');
+                        }
+                    }
                     self::update($memberData, $where);
                     $member = self::where($where)->find();
                 }

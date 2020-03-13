@@ -9,7 +9,6 @@
 namespace app\project\behavior;
 
 
-use app\common\Model\CommonModel;
 use app\common\Model\Member;
 use app\common\Model\Notify;
 use app\common\Model\ProjectLog;
@@ -17,13 +16,15 @@ use app\common\Model\ProjectVersion;
 use app\common\Model\TaskMember;
 use app\common\Model\TaskStages;
 use app\common\Model\TaskWorkflowRule;
+use Exception;
+use mail\Mail;
 use message\DingTalk;
 use service\MessageService;
 use think\Db;
 use think\db\exception\DataNotFoundException;
 use think\db\exception\ModelNotFoundException;
 use think\exception\DbException;
-use think\facade\Log;
+use think\facade\Request;
 
 class Task
 {
@@ -116,6 +117,10 @@ class Task
             case 'pri':
                 $icon = 'user';
                 $remark = '更新任务优先级为 ' . $task['priText'];
+                break;
+            case 'status':
+                $icon = 'deployment-unit';
+                $remark = '修改执行状态为 ' . $task['statusText'];
                 break;
             case 'removeExecutor':
                 $icon = 'user-delete';
@@ -247,6 +252,7 @@ class Task
                     $prefix = config('database.prefix');
                     $taskCode = $task['code'];
                     foreach ($data['data'] as $item) {
+                        $item = explode(' ', $item)[0];
                         $sql = "select tm.member_code from {$prefix}task_member as tm join {$prefix}member as m on tm.member_code = m.code where tm.task_code = '{$taskCode}' and name = '{$item}'";
                         $memberCurr = Db::query($sql);
                         if ($memberCurr) {
@@ -277,6 +283,25 @@ class Task
                                 ]
                             ];
                             $messageDingTalk->sendCorporationMessage($member['dingtalk_userid'], $params);
+                        }
+                    }
+                    if (isOpenMailNoticePush()) {
+                        if (config('mail.open')) {
+                            $mailer = new Mail();
+                            try {
+                                $mail = $mailer->mail;
+                                $mail->CharSet = 'utf-8';
+                                $mail->setFrom(config('mail.Username'), 'pearProject');
+                                $mail->addAddress($member['email'], $member['realname']);
+                                //Content
+                                $mail->isHTML(true);
+                                $link = Request::domain() . '/#/project/space/task/' . $task['project_code'];
+                                $mail->Subject = '[任务动态] ' . $notifyData['title'];
+                                $mail->Body = "[任务] {$notifyData['content']} <a href='{$link}' target='_blank'>点击查看项目</a>";
+                                $mail->send();
+                            } catch (Exception $e) {
+                                ob_clean();
+                            }
                         }
                     }
                     if (isOpenNoticePush()) {

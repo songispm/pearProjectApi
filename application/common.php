@@ -87,7 +87,7 @@ function setCurrentOrganization($data)
 function p($data, $force = false, $file = null)
 {
     is_null($file) && $file = env('runtime_path') . date('Ymd') . '.txt';
-    $str = (is_string($data) ? $data : (is_array($data) || is_object($data)) ? print_r($data, true) : var_export($data, true)) . PHP_EOL;
+    $str = (is_string($data) ? $data : ((is_array($data) || is_object($data)) ? print_r($data, true) : var_export($data, true))) . PHP_EOL;
     $force ? file_put_contents($file, $str) : file_put_contents($file, $str, FILE_APPEND);
 }
 
@@ -186,6 +186,14 @@ function isOpenNoticePush()
 function isOpenDingTalkNoticePush()
 {
     return config('config.dingtalk_push');
+}
+/**
+ * 是否开启任务邮件推送
+ * @return mixed
+ */
+function isOpenMailNoticePush()
+{
+    return config('config.mail_push');
 }
 
 /**

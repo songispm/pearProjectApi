@@ -84,7 +84,9 @@ class Login extends BasicApi
 //            }
             $member = Member::where(['mobile' => $mobile])->order('id asc')->find();
         } else {
-            $member = Member::where(['account' => $data['account']])->whereOr(['email' => $data['account']])->order('id asc')->find();
+            !$data['password'] && $this->error('登录密码不能为空!');
+            !$data['account'] && $this->error('登录账号不能为空!');
+            $member = Member::where(['account' => $data['account']])->whereOr(['email' => $data['account']])->whereOr(['mobile' => $data['account']])->order('id asc')->find();
         }
         empty($member) && $this->error('账号或密码错误', 201);
         $member = $member->toArray();

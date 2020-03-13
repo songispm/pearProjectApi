@@ -2,6 +2,7 @@
 
 namespace app\project\controller;
 
+use app\common\Model\Member;
 use controller\BasicApi;
 use think\db\exception\DataNotFoundException;
 use think\db\exception\ModelNotFoundException;
@@ -18,6 +19,12 @@ class Organization extends BasicApi
         }
     }
 
+    public function _getOrgList()
+    {
+        $list = Member::getOrgList(getCurrentMember()['code']);
+        $this->success('', $list);
+    }
+
     /**
      * 显示资源列表
      *
@@ -30,7 +37,7 @@ class Organization extends BasicApi
         $organizationList = [];
         if ($list) {
             foreach ($list as $item) {
-                $organization = $this->model->where(['code' => $item['organization_code']])->field('id', true)->find()->toArray();
+                $organization = $this->model->where(['code' => $item['organization_code']])->field('id', true)->find();
                 if ($organization) {
                     $organizationList[] = $organization;
                 }
@@ -103,12 +110,22 @@ class Organization extends BasicApi
     /**
      * 删除指定资源
      *
-     * @param  int $id
+     * @param int $id
      * @return void
      */
     public function delete($id = 0)
     {
         $this->model->destroy(Request::post('id'));
+        $this->success('');
+    }
+
+    public function _quitOrganization(Request $request)
+    {
+        $organizationCode = $request::param('organizationCode');
+        $res = $this->model->quitOrganization(getCurrentMember()['code'], $organizationCode);
+        if (isError($res)) {
+            $this->error($res['msg']);
+        }
         $this->success('');
     }
 }
